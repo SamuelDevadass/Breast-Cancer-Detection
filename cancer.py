@@ -1,447 +1,142 @@
-import numpy as np
-from keras.layers import Input, Dense, Activation, ZeroPadding2D, Flatten, Conv2D
-from keras.layers import MaxPooling2D
-from keras.models import Model
-from keras.preprocessing import image
-import keras.utils as image
-from keras.models import load_model
-from keras import metrics
-
-from keras.applications.imagenet_utils import preprocess_input
-from IPython.display import SVG
-from keras.utils.vis_utils import model_to_dot
-from keras.utils import plot_model
-from PIL import Image
-import keras.backend as K
-import tensorflow as tf
-import keras
-from keras.wrappers.scikit_learn import KerasClassifier
-
-K.set_image_data_format('channels_last')
-from matplotlib.pyplot import imshow
 import os
-
-#######################################################################################################################
-modelSavePath = 'my_model3.h5'
-numOfTestPoints = 2
-batchSize = 16
-numOfEpoches = 10
-#######################################################################################################################
-
-classes = []
-
-def mean_pred(y_true, y_pred):
-    return K.mean(y_pred)
-
-# Crop and rotate image, return 12 images
-def getCropImgs(img, needRotations=False):
-    # img = img.convert('L')
-    z = np.asarray(img, dtype=np.int8)
-    c = []
-    for i in range(3):
-        for j in range(4):
-            crop = z[512 * i:512 * (i + 1), 512 * j:512 * (j + 1), :]
-
-            c.append(crop)
-            if needRotations:
-                c.append(np.rot90(np.rot90(crop)))
-
-    # os.system('cls')
-    # print("Crop imgs", c[2].shape)
-
-    return c
-
-# Get the softmax from folder name
-def getAsSoftmax(fname):
-    if (fname == 'b'):
-        return [1, 0, 0, 0]
-    elif (fname == 'is'):
-        return [0, 1, 0, 0]
-    elif (fname == 'iv'):
-        return [0, 0, 1, 0]
-    else:
-        return [0, 0, 0, 1]
-
-# Return all images as numpy array, labels
-def get_imgs_frm_folder(path):
-    # x = np.empty(shape=[19200,512,512,3],dtype=np.int8)
-    # y = np.empty(shape=[400],dtype=np.int8)
-
-    x = []
-    y = []
-
-    cnt = 0
-    for foldname in os.listdir(path):
-        for filename in os.listdir(os.path.join(path, foldname)):
-            img = Image.open(os.path.join(os.path.join(path, foldname), filename))
-            # img.show()
-            crpImgs = getCropImgs(img)
-            cnt += 1
-            if cnt % 10 == 0:
-                print(str(cnt) + " Images loaded")
-            for im in crpImgs:
-                x.append(np.divide(np.asarray(im, np.float16), 255.))
-                # Image.fromarray(np.divide(np.asarray(im, np.float16), 255.), 'RGB').show()
-                y.append(getAsSoftmax(foldname))
-                # print(getAsSoftmax(foldname))
-
-    print("Images cropped")
-    print("Loading as array")
-
-    return x, y, cnt
-
-# Load the dataset
-def load_dataset(testNum=numOfTestPoints):
-    print("Loading images..")
-
-    train_set_x_orig, train_set_y_orig, cnt = get_imgs_frm_folder(r"C:\Users\LENOVO\Desktop\Cancer-detection-using-CNN-master\Samples")
-
-    testNum = numOfTestPoints * 12
-    trainNum = (cnt * 12) - testNum
-
-    print(testNum, trainNum)
-
-    train_set_x_orig = np.array(train_set_x_orig, np.float16)
-    train_set_y_orig = np.array(train_set_y_orig, np.int8)
-
-    nshapeX = train_set_x_orig.shape
-    nshapeY = train_set_y_orig.shape
-
-    # train_set_y_orig = oh
-
-    print("folder trainX" + str(nshapeX))
-    print("folder trainY" + str(nshapeY))
-
-    print("Images loaded")
-
-    print("Loading all data")
-
-    test_set_x_orig = train_set_x_orig[trainNum:, :, :, :]
-    train_set_x_orig = train_set_x_orig[0:trainNum, :, :, :]
-
-    test_set_y_orig = train_set_y_orig[trainNum:]
-    train_set_y_orig = train_set_y_orig[0:trainNum]
-
-    classes = np.array(os.listdir(r"C:\Users\LENOVO\Desktop\Cancer-detection-using-CNN-master\Samples"))  # the list of classes
-
-    # train_set_y_orig = np.array(train_set_y_orig).reshape((np.array(train_set_y_orig, np.float16).shape[1],
-    #                                                       np.array(train_set_y_orig, np.float16).shape[0]))
-    # test_set_y_orig = np.array(test_set_y_orig).reshape((np.array(test_set_y_orig, np.float16).shape[1],
-    #                                                     np.array(test_set_y_orig, np.float16).shape[0]))
-    print(train_set_y_orig[0:50, :])
-    print(train_set_x_orig[1])
-    print("Data load complete")
-
-    return train_set_x_orig, train_set_y_orig, test_set_x_orig, test_set_y_orig, classes
-
-def defModel(input_shape):
-    X_input = Input(input_shape)
-
-    # The max pooling layers use a stride equal to the pooling size
-
-    X = Conv2D(16, (3, 3), strides=(1, 1))(X_input)  # 'Conv.Layer(1)'
-
-    X = Activation('relu')(X)
-
-    X = MaxPooling2D((3, 3), strides=3)(X)  # MP Layer(2)
-
-    X = Conv2D(32, (3, 3), strides=(1, 1))(X)  # Conv.Layer(3)
-
-    X = Activation('relu')(X)
-
-    X = MaxPooling2D((2, 2), strides=2)(X)  # MP Layer(4)
-
-    X = Conv2D(64, (2, 2), strides=(1, 1))(X)  # Conv.Layer(5)
-
-    X = Activation('relu')(X)
-
-    X = ZeroPadding2D(padding=(2, 2))(X)  # Output of convlayer(5) will be 82x82, we want 84x84
-
-    X = MaxPooling2D((2, 2), strides=2)(X)  # MP Layer(6)
-
-    X = Conv2D(64, (2, 2), strides=(1, 1))(X)  # Conv.Layer(7)
-
-    X = Activation('relu')(X)
-
-    X = ZeroPadding2D(padding=(2, 2))(X)  # Output of convlayer(7) will be 40x40, we want 42x42
-
-    X = MaxPooling2D((3, 3), strides=3)(X)  # MP Layer(8)
-
-    X = Conv2D(32, (3, 3), strides=(1, 1))(X)  # Con.Layer(9)
-
-    X = Activation('relu')(X)
-
-    X = Flatten()(X)  # Convert it to FC
-
-    X = Dense(256, activation='relu')(X)  # F.C. layer(10)
-
-    X = Dense(128, activation='relu')(X)  # F.C. layer(11)
-
-    X = Dense(4, activation='softmax')(X)
-
-    # ------------------------------------------------------------------------------
-
-    model = Model(inputs=X_input, outputs=X, name='Model')
-
-    return model
-
-def train(batch_size, epochs):
-    config = tf.ConfigProto()
-    sess = tf.Session(config=config)
-    keras.backend.set_session(sess)
-
-    model = defModel(X_train.shape[1:])
-
-    model.compile('adam', 'categorical_crossentropy', metrics=['accuracy'])
-    # Uncomment the below code and comment the lines with(<>), to implement the image augmentations.
-
-    # datagen = keras.preprocessing.image.ImageDataGenerator(
-    # zoom_range=0.2, # randomly zoom into images
-    # rotation_range=180,  # randomly rotate images in the range (degrees, 0 to 180)
-    # width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
-    # height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
-    # horizontal_flip=False,  # randomly flip images
-    # vertical_flip=False  # randomly flip images
-    # )
-    while True:
-        try:
-            model = load_model(modelSavePath)
-        except:
-            print("Training a new model")
-
-        model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size) # <>
-
-        # history = model.fit_generator(datagen.flow(X_train, Y_train, batch_size=batch_size),
-        #                              epochs=epochs
-        #                              # validation_data=(X_test, Y_test))
-        #                              )
-        # history.model.save('my_model3.h5')
-
-        model.save(modelSavePath)
-
-        preds = model.evaluate(X_test, Y_test_orig, batch_size=1, verbose=1, sample_weight=None)
-        print(preds)
-
-        print()
-        print("Loss = " + str(preds[0]))
-        print("Test Accuracy = " + str(preds[1]) + "\n\n\n\n\n")
-        ch = input("Do you wish to continue training? (y/n) ")
-        if ch == 'y':
-            epochs = int(input("How many epochs this time? : "))
-            continue
-        else:
-            break
-
-    return model
-
-def predict(img, savedModelPath, showImg=True):
-    model = load_model(savedModelPath)
-    # if showImg:
-    # Image.fromarray(np.array(img, np.float16), 'RGB').show()
-
-    x = img
-    if showImg:
-        Image.fromarray(np.array(img, np.float16), 'RGB').show()
-    x = np.expand_dims(x, axis=0)
-
-    softMaxPred = model.predict(x)
-    print("prediction from CNN: " + str(softMaxPred) + "\n")
-    probs = softmaxToProbs(softMaxPred)
-
-    # plot_model(model, to_file='Model.png')
-    # SVG(model_to_dot(model).create(prog='dot', format='svg'))
-    maxprob = 0
-    maxI = 0
-    for j in range(len(probs)):
-        # print(str(j) + " : " + str(round(probs[j], 4)))
-        if probs[j] > maxprob:
-            maxprob = probs[j]
-            maxI = j
-    # print(softMaxPred)
-    print("prediction index: " + str(maxI))
-    return maxI, probs
-
-def softmaxToProbs(soft):
-    z_exp = [np.math.exp(i) for i in soft[0]]
-    sum_z_exp = sum(z_exp)
-    return [(i / sum_z_exp) * 100 for i in z_exp]
-
-def predictImage(img_path='my_image.jpg', arrayImg=None, printData=True):
-    crops = []
-    if arrayImg == None:
-        img = image.load_img(img_path)
-        crops = np.array(getCropImgs(img, needRotations=False), np.float16)
-        crops = np.divide(crops, 255.)
-    Image.fromarray(np.array(crops[0]), "RGB").show()
-
-    classes = []
-    classes.append("Benign")
-    classes.append("InSitu")
-    classes.append("Invasive")
-    classes.append("Normal")
-
-    compProbs = []
-    compProbs.append(0)
-    compProbs.append(0)
-    compProbs.append(0)
-    compProbs.append(0)
-
-    for i in range(len(crops)):
-        if printData:
-            print("\n\nCrop " + str(i + 1) + " prediction:\n")
-
-        ___, probs = predict(crops[i], modelSavePath, showImg=False)
-
-        for j in range(len(classes)):
-            if printData:
-                print(str(classes[j]) + " : " + str(round(probs[j], 4)) + "%")
-            compProbs[j] += probs[j]
-
-    if printData:
-        print("\n\nAverage from all crops\n")
-    
-    
-    max=0.0
-    index=0
-    for i in range(len(compProbs)):
-        if(compProbs[i]>max):
-            max=compProbs[i]
-            index=i
-               
-
-
-    for j in range(len(classes)):
-        if printData:
-            print(str(classes[j]) + " : " + str(round(compProbs[j] / 12, 4)) + "%")
-
-    print("CANCER IS : ",classes[index])
-
-    if(classes[index]=="Benign"):
-        print("TUMOURS ARE NON CANCEROUS")    
-    if(classes[index]=="Invasive"):
-        print("TUMOURS ARE CANCEROUS")
-    if(classes[index]=="InSitu"):
-        print("FIRST STAGE CANCER")
-    if(classes[index]=="Normal"):
-        print("NO CANCER DETECTED")
-    
-    
-
-#######################################################################
-def Call():
-    print("1. Do you want to train the network\n"
-      "2. Test the model\n(Enter 1 or 2)?\n")
-    ch = int(input())
-    if ch == 1:
-        try:
-            classes = np.load('classes.npy')
-            print("Loading")
-            X_train = np.load('X_train.npy')
-            Y_train = np.load('Y_train.npy')
-            X_test = np.load('X_test.npy')
-            Y_test_orig = np.load('Y_test_orig.npy')
-        except:
-            X_train, Y_train, X_test, Y_test_orig, classes = load_dataset()
-            print("Saving...")
-            np.save('X_train', X_train)
-            np.save('Y_train', Y_train)
-            np.save('X_test', X_test)
-            np.save('Y_test_orig', Y_test_orig)
-            np.save('classes', classes)
-
-        # for y in Y_train:
-        #    print(y)
-
-        print("number of training examples = " + str(X_train.shape[0]))
-        print("number of test examples = " + str(X_test.shape[0]))
-        print("X_train shape: " + str(X_train.shape))
-        print("Y_train shape: " + str(Y_train.shape))
-        print("X_test shape: " + str(X_test.shape))
-        print("Y_test shape: " + str(Y_test_orig.shape))
-        model = train(batch_size=batchSize, epochs=numOfEpoches)
-
-    elif ch == 2:
-
-        c = int(input("1. Test from random images\n2. Test your own custom image\n(Enter 1 or 2)\n"))
-        if c == 1:
-
-            try:
-                classes = np.load('classes.npy')
-                print("Loading")
-                X_train = np.load('X_train.npy')
-                Y_train = np.load('Y_train.npy')
-                X_test = np.load('X_test.npy')
-                Y_test_orig = np.load('Y_test_orig.npy')
-            except:
-                X_train, Y_train, _, __, classes = load_dataset()
-                print("Saving...")
-                np.save('X_train', X_train)
-                np.save('Y_train', Y_train)
-                np.save('X_test', _)
-                np.save('Y_test_orig', __)
-                np.save('classes', classes)
-
-            _ = None
-            __ = None
-            testImgsX = []
-            testImgsY = []
-            ran = []
-            print("X_train shape: " + str(X_train.shape))
-            print("Y_train shape: " + str(Y_train.shape))
-            # print(X_train[1])
-            for i in range(10):
-                ran.append(np.random.randint(0, X_train.shape[0] - 1))
-            for ranNum in ran:
-                testImgsX.append(X_train[ranNum])
-                testImgsY.append(Y_train[ranNum])
-                # predict(Image.fromarray(X_train[ran],'RGB'))
-
-            X_train = None
-            Y_train = None
-
-            print("testImgsX shape: " + str(len(testImgsX)))
-            print("testImgsY shape: " + str(len(testImgsY)))
-            # print(testImgsY[1])
-            # print(testImgsX[1])
-
-            cnt = 0.0
-
-            classes = []
-            classes.append("Benign")
-            classes.append("InSitu")
-            classes.append("Invasive")
-            classes.append("Normal")
-
-            compProbs = []
-            compProbs.append(0)
-            compProbs.append(0)
-            compProbs.append(0)
-            compProbs.append(0)
-
-            for i in range(len(testImgsX)):
-                print("\n\nTest image " + str(i + 1) + " prediction:\n")
-
-                predi, probs = predict(testImgsX[i], modelSavePath, showImg=False)
-
-                for j in range(len(classes)):
-                    print(str(classes[j]) + " : " + str(round(probs[j], 4)) + "%")
-                    compProbs[j] += probs[j]
-
-                maxi = 0
-                for j in range(len(testImgsY[0])):
-                    if testImgsY[i][j] == 1:  # The right class
-                        maxi = j
-                        break
-                if predi == maxi:
-                    cnt += 1
-
-            print("% of images that are correct: " + str((cnt / len(testImgsX)) * 100))
-
-        elif c == 2:
-            predictImage()
-
-    else:
-        print("Please enter only 1 or 2")
-Call()
-
-
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, backend as K
+from PIL import Image
+
+class CancerDetectionPipeline:
+    def __init__(self, model_save_path='my_model3.h5', num_classes=4):
+        self.model_save_path = model_save_path
+        self.num_classes = num_classes
+        self.class_labels = ["Benign", "InSitu", "Invasive", "Normal"]
+        
+        # Modern TensorFlow configurations
+        K.set_image_data_format('channels_last')
+
+    def extract_patches(self, img, need_rotations=False):
+        """
+        Extracts a grid of 12 patches (512x512) from a high-res biopsy image.
+        Optionally applies 180-degree rotations for basic data augmentation.
+        """
+        img_array = np.asarray(img, dtype=np.uint8)
+        patches = []
+        
+        # 3x4 grid cropping strategy
+        for i in range(3):
+            for j in range(4):
+                crop = img_array[512*i : 512*(i+1), 512*j : 512*(j+1), :]
+                patches.append(crop)
+                if need_rotations:
+                    patches.append(np.rot90(crop, k=2)) # Rotates 180 degrees cleanly
+        return patches
+
+    def _get_one_hot_label(self, folder_name):
+        """Maps folder category names to a structured one-hot encoded vector."""
+        mapping = {'b': [1,0,0,0], 'is': [0,1,0,0], 'iv': [0,0,1,0]}
+        return mapping.get(folder_name, [0,0,0,1])
+
+    def load_and_preprocess_dataset(self, data_directory, num_test_samples=2):
+        """Loads raw images from folders, processes patches, and returns splits."""
+        x_data, y_data = [], []
+        image_count = 0
+
+        for foldname in os.listdir(data_directory):
+            fold_path = os.path.join(data_directory, foldname)
+            if not os.path.isdir(fold_path):
+                continue
+                
+            for filename in os.listdir(fold_path):
+                img_path = os.path.join(fold_path, filename)
+                try:
+                    with Image.open(img_path) as img:
+                        patches = self.extract_patches(img)
+                    image_count += 1
+                    
+                    for patch in patches:
+                        # Normalize pixel values directly to float32
+                        x_data.append(patch.astype(np.float32) / 255.0)
+                        y_data.append(self._get_one_hot_label(foldname))
+                except Exception as e:
+                    print(f"Skipping corrupt image {filename}: {e}")
+
+        x_data, y_data = np.array(x_data, dtype=np.float32), np.array(y_data, dtype=np.int8)
+        
+        test_size = num_test_samples * 12
+        train_size = len(x_data) - test_size
+
+        return (
+            x_data[:train_size], y_data[:train_size],
+            x_data[train_size:], y_data[train_size:]
+        )
+
+    def build_cnn_architecture(self, input_shape=(512, 512, 3)):
+        """Defines the custom ConvNet layers with systematic downsampling."""
+        inputs = layers.Input(shape=input_shape)
+        
+        x = layers.Conv2D(16, (3, 3), activation='relu')(inputs)
+        x = layers.MaxPooling2D((3, 3), strides=3)(x)
+        
+        x = layers.Conv2D(32, (3, 3), activation='relu')(x)
+        x = layers.MaxPooling2D((2, 2), strides=2)(x)
+        
+        x = layers.Conv2D(64, (2, 2), activation='relu')(x)
+        x = layers.ZeroPadding2D(padding=(2, 2))(x)
+        x = layers.MaxPooling2D((2, 2), strides=2)(x)
+        
+        x = layers.Conv2D(64, (2, 2), activation='relu')(x)
+        x = layers.ZeroPadding2D(padding=(2, 2))(x)
+        x = layers.MaxPooling2D((3, 3), strides=3)(x)
+        
+        x = layers.Conv2D(32, (3, 3), activation='relu')(x)
+        x = layers.Flatten()(x)
+        
+        x = layers.Dense(256, activation='relu')(x)
+        x = layers.Dense(128, activation='relu')(x)
+        outputs = layers.Dense(self.num_classes, activation='softmax')(x)
+        
+        return models.Model(inputs=inputs, outputs=outputs, name='Cancer_Detection_CNN')
+
+    def execute_training_loop(self, x_train, y_train, x_test, y_test, batch_size=16, epochs=10):
+        """Compiles, manages execution loops, and stores the optimized model states."""
+        model = self.build_cnn_architecture(input_shape=x_train.shape[1:])
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        if os.path.exists(self.model_save_path):
+            print(f"Loading weights from existing model checkpoint: {self.model_save_path}")
+            model = models.load_model(self.model_save_path)
+
+        model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, validation_data=(x_test, y_test))
+        model.save(self.model_save_path)
+        return model
+
+    def infer_single_image(self, img_path):
+        """Runs patch ensemble inference across an un-cropped tissue image."""
+        if Skinner := not os.path.exists(self.model_save_path):
+            raise FileNotFoundError("Trained model checkpoint binary file not found.")
+            
+        model = models.load_model(self.model_save_path)
+        with Image.open(img_path) as img:
+            normalized_crops = np.array(self.extract_patches(img), dtype=np.float32) / 255.0
+            
+        accumulated_probabilities = np.zeros(self.num_classes)
+        
+        for patch in normalized_crops:
+            input_tensor = np.expand_dims(patch, axis=0)
+            predictions = model.predict(input_tensor, verbose=0)
+            accumulated_probabilities += predictions[0]
+            
+        mean_probabilities = accumulated_probabilities / len(normalized_crops)
+        predicted_class_idx = np.argmax(mean_probabilities)
+        
+        print("\n=== Diagnosis Report ===")
+        for label, prob in zip(self.class_labels, mean_probabilities):
+            print(f"{label}: {prob*100:.2f}%")
+        print(f"\nFinal Aggregated Prediction: {self.class_labels[predicted_class_idx].upper()}")
+
+
+if __name__ == "__main__":
+    # Example clean pipeline initialization usage
+    pipeline = CancerDetectionPipeline()
+    # To execute training, pass local parameter directories cleanly:
+    # x_train, y_train, x_test, y_test = pipeline.load_and_preprocess_dataset("./Samples")
+    # pipeline.execute_training_loop(x_train, y_train, x_test, y_test)
